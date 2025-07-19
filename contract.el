@@ -257,15 +257,26 @@
 
 ;;;; Variables
 
-(defvar contract-enable t
-  "If nil, then contracts will not be enforced.")
+(defgroup contract ()
+  "Racket-style higher-order contracts for Emacs Lisp"
+  :prefix "contract-"
+  :group 'elisp)
 
-(defvar contract-enable-slow t
-  "If nil, then slow (non-constant-time) contracts will not be enforced.")
+(defcustom contract-enable t
+  "If nil, then contracts will not be enforced."
+  :group 'contract
+  :type 'boolean)
+
+(defcustom contract-enable-slow t
+  "If nil, then slow (non-constant-time) contracts will not be enforced."
+  :group 'contract
+  :type 'boolean)
 
 ;; TODO: Unused
-(defvar contract-warn-only t
-  "If nil, then contract violations will emit warnings instead of calling `signal'.")
+(defcustom contract-warn-only t
+  "If nil, then contract violations will emit warnings instead of calling `signal'."
+  :group 'contract
+  :type 'boolean)
 
 (defvar contract-violations '()
   "A log of all contract violations.
@@ -292,10 +303,7 @@ that fail but are part of a disjunction (TODO).")
                    (car forms)
                  `(progn ,@forms)))
       return nil
-      finally return t))
-
-  (defun contract--or (lst) (contract--any (elem lst) elem))
-  (defun contract--and (lst) (contract--all (elem lst) elem)))
+      finally return t)))
 
 ;;;;; Bootstrapping
 
@@ -1171,6 +1179,74 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
    (list len)
    t))
 
+(defclass contract--sequence-of-c (contract--builder-c)
+  ((subcontracts                              ; invariant: length 1
+    :initarg :subcontracts
+    :reader contract--subcontracts)))
+
+;; TODO: This should go in `contract-first-order'
+(cl-defmethod initialize-instance :after ((contract contract--sequence-of-c) &rest _slots)
+  "Initialize CONTRACT with some default slot values."
+  (oset
+   contract
+   first-order
+   (lambda (v)
+     (and
+      (sequencep v)
+      (let* ((elem-contract (car (contract--subcontracts contract)))
+             (elem-first-order (contract-first-order elem-contract)))
+        (contract--all (elem v) (funcall elem-first-order elem)))))))
+
+(contract--bootstrap-defmethod contract--ast ((contract contract--sequence-of-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract-sequence-of-c
+    :arguments (contract--subcontracts contract))))
+
+(contract--bootstrap-defmethod contract-projection ((contract contract--sequence-of-c))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (lambda (pos-blame)
+     (contract--precond-expect-blame "projection of contract-sequence-of-c" pos-blame)
+     (let* ((elem-contract (contract--coerce-runtime (car (contract--subcontracts contract))))
+            (elem-projection (funcall (contract-projection elem-contract)
+                                      (contract--blame-add-context pos-blame "in an element of"))))
+       (lambda (value neg-party)
+         (contract--add-negative-party pos-blame neg-party)
+         (cond
+          ((not (sequencep value))
+           (contract-raise-violation
+            (contract--make-violation
+             :blame pos-blame
+             :contract contract
+             :callstack (contract--function-stack)
+             :format "Expected a sequence, got %s")
+            value))
+           ((contract-is-first-order contract)
+            (seq-doseq (elem value)
+              (funcall elem-projection elem neg-party))
+            value)
+           (t
+            (seq-into
+             (mapcar (lambda (elem) (funcall elem-projection elem neg-party))
+                     value)
+             (cl-typecase value
+               (vector 'vector)
+               (string 'string)
+               (t 'list))))))))))
+
+(contract--bootstrap-defun contract-sequence-of-c (elem-contract)
+  (-> contract-contract contract-contract)
+  "Contract for homogeneous sequences of ELEM-CONTRACT."
+  (contract--sequence-of-c :subcontracts (list elem-contract)))
+
 ;;;;;; EIEIO
 ;;;;; any-c
 
@@ -1199,9 +1275,7 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
    format
    "Expected any value, got %s. This is probably a bug in contract.el."))
 
-(defconst
-  contract-any-c
-  (contract--any-c)
+(defconst contract-any-c (contract--any-c)
   "Don't check anything; accept every value.")
 
 ;;;;; none-c
@@ -1228,7 +1302,8 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
   "Get the format string of NONEC."
   (contract--oref-or-oset nonec format "`nonec' rejects every value, got %s"))
 
-(defconst contract-none-c (contract--none-c) "Reject every value.")
+(defconst contract-none-c (contract--none-c)
+  "Reject every value.")
 
 ;;;; Coercion
 
@@ -2078,6 +2153,96 @@ Cautiously will not advice any function with pre-existing advice."
   (contract-advise contract--contract-advise-contract #'contract-advise)
   (setq contract--contract-advise-advised t))
 
+(contract--bootstrap-defun contract--expand-abbrevs (stx)
+  (-> t t)
+  "Rewrite STX, replacing any abbreviated symbols with their expansion.
+
+Specifically, any symbols with a `contract-abbrev' property are replaced
+by that symbol's value."
+  (cl-typecase stx
+    (list (mapcar #'contract--expand-abbrevs stx))
+    (vector (seq-into (mapcar #'contract--expand-abbrevs stx) 'vector))
+    (symbol (or (get stx 'contract-abbrev) stx))
+    (t stx)))
+
+(contract--bootstrap-defsubst contract-plist-remove (plist key)
+  (-> list symbol list)
+  "Remove KEY from PLIST."
+  (let (prefix)
+    (while plist
+      (let ((pkey (pop plist))
+            (pval (pop plist)))
+        (unless (eq key pkey)
+          (push pkey prefix)
+          (push pval prefix))))
+    (nreverse prefix)))
+
+(contract--bootstrap-defun contract--set-abbrevs (symbol alist)
+  (-> symbol list t)
+  "Put each mapping in ALIST as a contract abbreviation."
+  (obarray-map
+   (lambda (sym)
+     (when (get sym 'contract-abbrev)
+       (setplist sym
+                 (contract-plist-remove
+                  (symbol-plist sym)
+                  'contract-abbrev))))
+   obarray)
+  (dolist (pair alist)
+    (put (car pair) 'contract-abbrev (cdr pair)))
+  (set-default symbol "Do NOT use `contract-abbrevs' programmatically."))
+
+(contract--bootstrap-defun contract--get-abbrevs (_symbol)
+  (-> symbol list)
+  "Get the mapping of contract abbreviations as an alist."
+  (let (pairs)
+    (obarray-map
+     (lambda (sym)
+       (when-let (abbrev (get sym 'contract-abbrev))
+         (push (cons sym abbrev) pairs)))
+     obarray)
+    (sort pairs)))
+
+(defcustom contract-abbrevs
+  '((-> . contract->) (->d . contract->d) (contract/c . contract-contract-c)
+    (</c . contract-<-c) (<=/c . contract-<=-c) (=/c . contract-=-c)
+    (>/c . contract->-c) (>=/c . contract->=-c)
+    (and/c . contract-and-c) (or/c . contract-or-c) (any/c . contract-any-c)
+    (blame/c . contract-blame-c) (boolean/c . contract-boolean-c)
+    (cons/c . contract-cons-of-c) (sequenceof/c . contract-sequence-of-c)
+    (contract/c . contract-contract-c)
+    (eq/c . contract-eq-c) (eql/c . contract-eql-c) (equal/c . contract-equal-c)
+    (function/c . contract-function-c) (length/c . contract-length-c)
+    (match/c . contract-match-c) (maybe/c . contract-maybe-c)
+    (natnum/c . contract-nat-number-c) (nil/c . contract-nil-c)
+    (none/c . contract-none-c) (not/c . contract-not-c)
+    (number/c . contract-number-c) (sequence/c . contract-sequence-c)
+    (string/c . contract-string-c)
+    (string-prefix/c . contract-string-prefix-c)
+    (string-suffix/c . contract-string-suffix-c)
+    (subr/c . contract-subr-c)
+    (substring/c . contract-substring-c)
+    (t/c . contract-t-c)
+    (the/c . contract-the-c))
+  "Abbreviations for contract names in `contract-defun' and `contract-expand'.
+
+Do NOT access this variable programmatically, as it is a customize-only
+view of the abbreviation alist.  To set this variable outside of custom,
+you must set the `contract-abbrev' property of the symbol."
+  :type '(alist :key-type (symbol :tag "Abbreviation")
+                :key-type (symbol :tag "Expansion"))
+  :set #'contract--set-abbrevs
+  :get #'contract--get-abbrevs
+  :group 'contract)
+
+(contract--bootstrap-defmacro contract-expand (expr)
+  (-> t t)
+  "Evaluate EXPR with contract abbreviations expanded.
+
+Contract abbreviations are any symbol with a `contract-abbrev' property.
+See also `contract-abbrevs'."
+  (contract--expand-abbrevs expr))
+
 ;; TODO: Rewrite recursive calls to avoid contract checking overhead?
 ;; TODO: add fast-contract kwarg
 ;; TODO: modifies/preserves kwargs
@@ -2098,10 +2263,8 @@ contract and applied to the defined function."
           ,(get (quote ,name) 'contract)
           (lambda ,arguments ,@forms)
           (contract-make-blame
-           :positive-party
-           ,(symbol-name name)
-           :negative-party
-           ,(concat "caller of " (symbol-name name))))))))
+           :positive-party ,(symbol-name name)
+           :negative-party ,(concat "caller of " (symbol-name name))))))))
 
 ;; TODO: contract-defconst
 ;; TODO: contract-setf
