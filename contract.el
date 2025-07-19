@@ -257,25 +257,17 @@
 
 ;;;; Variables
 
-(defvar
-  contract-enable
-  t
+(defvar contract-enable t
   "If nil, then contracts will not be enforced.")
 
-(defvar
-  contract-enable-slow
-  t
+(defvar contract-enable-slow t
   "If nil, then slow (non-constant-time) contracts will not be enforced.")
 
 ;; TODO: Unused
-(defvar
-  contract-warn-only
-  t
+(defvar contract-warn-only t
   "If nil, then contract violations will emit warnings instead of calling `signal'.")
 
-(defvar
-  contract-violations
-  '()
+(defvar contract-violations '()
   "A log of all contract violations.
 
 Currently spuriously records 'violations' of negated contracts, and contracts
@@ -346,8 +338,7 @@ Used for bootstrapping (since we don't yet have contracts!)."
   (string-join strs " "))
 
 ;; TODO: Handle &rest and &optional args
-(defun contract--bootstrap-def
-    (def-what name args type body)
+(defun contract--bootstrap-def (def-what name args type body)
   "Create a form that checks types at runtime using `cl-check-type'.
 
 See Info node `(cl)Type Predicates'."
@@ -376,6 +367,9 @@ See Info node `(cl)Type Predicates'."
   `(,def-what ,name ,args
      ;; Docstring
      ,(if (stringp (car body)) (pop body))
+     ;; (declare)
+     ,(if (and (listp (car body)) (eq (caar body) 'declare))
+          (pop body))
      ;; Check arguments
      ,@(mapcar
         (lambda (pair)
@@ -428,39 +422,39 @@ See Info node `(cl)Type Predicates'."
   "Create a `defun' form that checks types at runtime using `cl-check-type'.
 
 See Info node `(cl)Type Predicates'."
+  (declare (indent 2) (doc-string 4))
   (contract--bootstrap-def 'defun name args type body))
 
 (defmacro contract--bootstrap-defmacro (name args type &rest body)
   "Create a `defmacro' form that checks types using `cl-check-type'.
 
 See Info node `(cl)Type Predicates'."
+  (declare (indent 2) (doc-string 4))
   (contract--bootstrap-def 'defmacro name args type body))
 
 (defmacro contract--bootstrap-defsubst (name args type &rest body)
   "Create a `defsubst' form that checks types at runtime using `cl-check-type'.
 
 See Info node `(cl)Type Predicates'.."
+  (declare (indent 2) (doc-string 4))
   (contract--bootstrap-def 'defsubst name args type body))
 
 (defmacro contract--bootstrap-defmethod (name args type &rest body)
   "Create a `defmethod' form that checks types at runtime using `cl-check-type'.
 
 See Info node `(cl)Type Predicates'.."
+  (declare (indent 2) (doc-string 4))
   (contract--bootstrap-def 'cl-defmethod name args type body))
 
-(contract--bootstrap-defsubst
- contract--list-of
- (pred lst)
- (-> symbol list boolean)
- "Check that LST is a list and each element satisfies PRED."
- (and (listp lst) (contract--all (elem lst) (funcall pred elem))))
+(contract--bootstrap-defsubst contract--list-of (pred lst)
+  (-> symbol list boolean)
+  "Check that LST is a list and each element satisfies PRED."
+  (and (listp lst) (contract--all (elem lst) (funcall pred elem))))
 
-(contract--bootstrap-defsubst
- contract--non-empty-string-p
- (obj)
- (-> t boolean)
- "Check that OBJ is a non-empty string (`stringp')."
- (and (stringp obj) (< 0 (length obj))))
+(contract--bootstrap-defsubst contract--non-empty-string-p (obj)
+  (-> t boolean)
+  "Check that OBJ is a non-empty string (`stringp')."
+  (and (stringp obj) (< 0 (length obj))))
 
 ;;;;; Other
 
@@ -468,11 +462,9 @@ See Info node `(cl)Type Predicates'.."
   "Ignore an unused variable warning, usually involving macros."
   nil)
 
-(contract--bootstrap-defun
- contract--arity-at-least
- (func arity)
- (-> function natnum boolean)
- "Check if FUNC has arity of at least ARITY.
+(contract--bootstrap-defun contract--arity-at-least (func arity)
+  (-> function natnum boolean)
+  "Check if FUNC has arity of at least ARITY.
 
 >> (contract--arity-at-least #'natnump 1)
 => t
@@ -480,38 +472,32 @@ See Info node `(cl)Type Predicates'.."
 => nil
 >> (contract--arity-at-least #'contract--arity-at-least 2)
 => t"
- (let ((max-arity (cdr (func-arity func))))
-   (pcase max-arity
-     (`many t)
-     ((pred natnump) (>= max-arity arity))
-     (_ nil))))
+  (let ((max-arity (cdr (func-arity func))))
+    (pcase max-arity
+      (`many t)
+      ((pred natnump) (>= max-arity arity))
+      (_ nil))))
 
 (cl-deftype contract--arity-t (arity)
   `(and function (satisfies (lambda (f) (contract--arity-at-least f ,arity)))))
 
-(contract--bootstrap-defsubst
- contract--sexp-str
- (&rest strs)
- (-> &rest list string)
- "Create an s-expression from STRS."
- (concat "(" (mapconcat 'identity strs " ") ")"))
+(contract--bootstrap-defsubst contract--sexp-str (&rest strs)
+  (-> &rest list string)
+  "Create an s-expression from STRS."
+  (concat "(" (mapconcat 'identity strs " ") ")"))
 
 (eval-when-compile
-  (contract--bootstrap-defsubst
-   contract--trunc
-   (len str)
-   (-> natnum string string)
-   "Truncate STR to LEN characters."
-   (if (> (length str) len)
-       (concat (substring str 0 (- len 3)) "...")
-     str))
+  (contract--bootstrap-defsubst contract--trunc (len str)
+    (-> natnum string string)
+    "Truncate STR to LEN characters."
+    (if (> (length str) len)
+        (concat (substring str 0 (- len 3)) "...")
+      str))
 
-  (contract--bootstrap-defsubst
-   contract--trunc-format
-   (len value)
-   (-> natnum t string)
-   "Print VALUE using `format' and truncate the string to LEN characters."
-   (contract--trunc len (format "%s" value))))
+  (contract--bootstrap-defsubst contract--trunc-format (len value)
+    (-> natnum t string)
+    "Print VALUE using `format' and truncate the string to LEN characters."
+    (contract--trunc len (format "%s" value))))
 
 ;;;; Blame
 
@@ -538,91 +524,77 @@ See https://docs.racket-lang.org/reference/Building_New_Contract_Combinators.htm
    :documentation "The negative party/value consumer/client"))
 
 ;; TODO: Error messages!
-(contract--bootstrap-defun
- contract-valid-blame-p
- (blame)
- (-> contract-blame boolean)
- "Check that BLAME satisfies the invariants of blame objects.
+(contract--bootstrap-defun contract-valid-blame-p (blame)
+  (-> contract-blame boolean)
+  "Check that BLAME satisfies the invariants of blame objects.
 
 The invariants are: (TODO)"
- (and
-  (contract--list-of
-   #'contract--non-empty-string-p
-   (contract-blame-context blame))
-  (contract--non-empty-string-p (contract-blame-positive-party blame))
-  (contract--non-empty-string-p (contract-blame-negative-party blame))))
+  (and
+   (contract--list-of
+    #'contract--non-empty-string-p
+    (contract-blame-context blame))
+   (contract--non-empty-string-p (contract-blame-positive-party blame))
+   (contract--non-empty-string-p (contract-blame-negative-party blame))))
 
 ;; TODO: Delete in favor of bootstrap-def*
 (defsubst contract--precond-expect-blame (func blame)
   "Assert that BLAME is a blame object as a precondition of FUNC."
   (contract--precond (contract-blame-p blame) func "Expected a blame object."))
 
-(contract--bootstrap-defsubst
- contract--blame-add-context
- (blame context)
- (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
- "Add CONTEXT to the context of BLAME."
- (contract-make-blame
-  :context
-  (cons context (contract-blame-context blame))
-  :positive-party (contract-blame-positive-party blame)
-  :negative-party (contract-blame-negative-party blame)))
+(contract--bootstrap-defsubst contract--blame-add-context (blame context)
+  (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
+  "Add CONTEXT to the context of BLAME."
+  (contract-make-blame
+   :context
+   (cons context (contract-blame-context blame))
+   :positive-party (contract-blame-positive-party blame)
+   :negative-party (contract-blame-negative-party blame)))
 
-(contract--bootstrap-defsubst
- contract--blame-swap-add-context
- (blame context)
- (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
- "Swap the positive and negative party in this BLAME, and add CONTEXT."
- (contract-make-blame
-  :context
-  (cons context (contract-blame-context blame))
-  :positive-party (contract-blame-negative-party blame)
-  :negative-party (contract-blame-positive-party blame)))
+(contract--bootstrap-defsubst contract--blame-swap-add-context (blame context)
+  (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
+  "Swap the positive and negative party in this BLAME, and add CONTEXT."
+  (contract-make-blame
+   :context
+   (cons context (contract-blame-context blame))
+   :positive-party (contract-blame-negative-party blame)
+   :negative-party (contract-blame-positive-party blame)))
 
-(contract--bootstrap-defsubst
- contract--blame-set-positive-party
- (blame positive)
- (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
- "Create a new blame like BLAME except with positive party POSITIVE."
- (contract-make-blame
-  :context (contract-blame-context blame)
-  :positive-party positive
-  :negative-party (contract-blame-negative-party blame)))
+(contract--bootstrap-defsubst contract--blame-set-positive-party (blame positive)
+  (-> contract-valid-blame contract--non-empty-string contract-valid-blame)
+  "Create a new blame like BLAME except with positive party POSITIVE."
+  (contract-make-blame
+   :context (contract-blame-context blame)
+   :positive-party positive
+   :negative-party (contract-blame-negative-party blame)))
 
-(contract--bootstrap-defsubst
- contract--add-negative-party
- (blame str)
- (-> contract-blame contract--non-empty-string contract--non-empty-string)
- "Add a negative party STR to this BLAME.
+(contract--bootstrap-defsubst contract--add-negative-party (blame str)
+  (-> contract-blame contract--non-empty-string contract--non-empty-string)
+  "Add a negative party STR to this BLAME.
 
 Returns STR."
- (setf (contract-blame-negative-party blame) str))
+  (setf (contract-blame-negative-party blame) str))
 
 ;;;; Violations
 
 ;; https://emacs.stackexchange.com/questions/7396/how-can-i-determine-which-function-was-called-interactively-in-the-stack/7405#7405
-(contract--bootstrap-defsubst
- contract--call-stack
- ()
- (-> list)                              ; TODO: list of what
- "Return the current call stack frames."
- (let ((frames)
-       (frame)
-       (index 5))
-   (while (setq frame (backtrace-frame index))
-     (push frame frames)
-     (setq index (+ 1 index)))
-   (cl-loop
-    for frame in frames
-    if (car frame)
-    collect frame)))
+(contract--bootstrap-defsubst contract--call-stack ()
+  (-> list)                              ; TODO: list of what
+  "Return the current call stack frames."
+  (let ((frames)
+        (frame)
+        (index 5))
+    (while (setq frame (backtrace-frame index))
+      (push frame frames)
+      (setq index (+ 1 index)))
+    (cl-loop
+     for frame in frames
+     if (car frame)
+     collect frame)))
 
-(contract--bootstrap-defsubst
- contract--function-stack
- ()
- (-> list)
- "Like call-stack but is a list of only the function names."
- (butlast (mapcar 'cl-second (contract--call-stack))))
+(contract--bootstrap-defsubst contract--function-stack ()
+  (-> list)
+  "Like call-stack but is a list of only the function names."
+  (butlast (mapcar 'cl-second (contract--call-stack))))
 
 (cl-defstruct
     (contract-violation
@@ -648,25 +620,24 @@ Conforms to the invariants specified in `contract-valid-violation-p'."
    :documentation "Format string for the error message"))
 
 ;; TODO: Error messages!
-(contract--bootstrap-defun
- contract-valid-violation-p
- (violation)
- (-> contract-violation boolean)
- "Check that VIOLATION satisfies the invariants of violation objects.
+(contract--bootstrap-defun contract-valid-violation-p
+  (violation)
+  (-> contract-violation boolean)
+  "Check that VIOLATION satisfies the invariants of violation objects.
 
 The invariants are: (TODO)"
- (and
-  (contract-valid-blame-p (contract-violation-blame violation))
-  ;; TODO: Contract validity
-  ;; (contract-valid-metadata-p (contract-violation-metadata violation))
-  ;; TODO: List of what?
-  (listp (contract-violation-callstack violation))
-  ;; TODO: Predicate for format strings with one placeholder.
-  (or
-   (contract--non-empty-string-p (contract-violation-format violation))
-   (contract--non-empty-string-p
-    (contract--format
-     (contract-violation-contract violation))))))
+  (and
+   (contract-valid-blame-p (contract-violation-blame violation))
+   ;; TODO: Contract validity
+   ;; (contract-valid-metadata-p (contract-violation-metadata violation))
+   ;; TODO: List of what?
+   (listp (contract-violation-callstack violation))
+   ;; TODO: Predicate for format strings with one placeholder.
+   (or
+    (contract--non-empty-string-p (contract-violation-format violation))
+    (contract--non-empty-string-p
+     (contract--format
+      (contract-violation-contract violation))))))
 
 (eval-when-compile
   ;; TODO: Delete in favor of bootstrap-def*
@@ -677,48 +648,44 @@ The invariants are: (TODO)"
      func
      "Expected a violation object.")))
 
-(contract--bootstrap-defun
- contract--format-violation
- (violation value)
- (-> contract-valid-violation t string)
- "Format an error message representing VIOLATION with value VALUE."
- (let ((blame (contract-violation-blame violation)))
-   (concat
-    (format
-     "%s\nBlaming: %s (assuming the contract is correct)\nIn:%s\nCall stack:\n  %s"
+(contract--bootstrap-defun contract--format-violation (violation value)
+  (-> contract-valid-violation t string)
+  "Format an error message representing VIOLATION with value VALUE."
+  (let ((blame (contract-violation-blame violation)))
+    (concat
      (format
-      (let ((fmt (contract-violation-format violation)))
-        (if fmt
-            fmt
-          (contract--format (contract-violation-contract violation))))
-      (contract--trunc-format
-       60
-       (if (functionp value) "<function value>" value)))
-     (contract-blame-positive-party blame)
-     (let ((sep "\n  "))
-       ;; Avoid redundant white space.
-       (if (equal 0 (length (contract-blame-context blame)))
-           ""
-         (concat sep (string-join (contract-blame-context blame) sep))))
-     (string-join
-      (mapcar
-       (lambda (f)
-         (cond
-          ((subrp f) (subr-name f))
-          ((symbolp f) (symbol-name f))
-          (t "*unknown*")))
-       (contract-violation-callstack violation))
-      "\n  ")))))
+      "%s\nBlaming: %s (assuming the contract is correct)\nIn:%s\nCall stack:\n  %s"
+      (format
+       (let ((fmt (contract-violation-format violation)))
+         (if fmt
+             fmt
+           (contract--format (contract-violation-contract violation))))
+       (contract--trunc-format
+        60
+        (if (functionp value) "<function value>" value)))
+      (contract-blame-positive-party blame)
+      (let ((sep "\n  "))
+        ;; Avoid redundant white space.
+        (if (equal 0 (length (contract-blame-context blame)))
+            ""
+          (concat sep (string-join (contract-blame-context blame) sep))))
+      (string-join
+       (mapcar
+        (lambda (f)
+          (cond
+           ((subrp f) (subr-name f))
+           ((symbolp f) (symbol-name f))
+           (t "*unknown*")))
+        (contract-violation-callstack violation))
+       "\n  ")))))
 
 (define-error 'contract-violation "Contract violation")
 
-(contract--bootstrap-defun
- contract-raise-violation
- (violation value)
- (-> contract-valid-violation t t)
- "Signal a VIOLATION with value VALUE."
- (push (cons violation value) contract-violations)
- (signal 'contract-violation (contract--format-violation violation value)))
+(contract--bootstrap-defun contract-raise-violation (violation value)
+  (-> contract-valid-violation t t)
+  "Signal a VIOLATION with value VALUE."
+  (push (cons violation value) contract-violations)
+  (signal 'contract-violation (contract--format-violation violation value)))
 
 ;;;; Contracts
 ;;;;; AST
@@ -774,26 +741,24 @@ its data - many of its properties are lazily calculated from its AST and then
 cached."
   :abstract t)
 
-(contract--bootstrap-defun
- contract--name
- (value)
- (-> t string)
- "Helper for `contract-name'. VALUE can be anything."
- (if (and
-      (eieio-object-p value)
-      (object-of-class-p value 'contract-contract))
-     (let* ((ast (contract--ast value))
-            (constructor-name
-             (symbol-name
-              (contract-ast-constructor ast)))
-            (args (contract-ast-arguments ast)))
-       (if (not args)
+(contract--bootstrap-defun contract--name (value)
+  (-> t string)
+  "Helper for `contract-name'. VALUE can be anything."
+  (if (and
+       (eieio-object-p value)
+       (object-of-class-p value 'contract-contract))
+      (let* ((ast (contract--ast value))
+             (constructor-name
+              (symbol-name
+               (contract-ast-constructor ast)))
+             (args (contract-ast-arguments ast)))
+        (if (not args)
+            constructor-name
+          (apply
+           #'contract--sexp-str
            constructor-name
-         (apply
-          #'contract--sexp-str
-          constructor-name
-          (mapcar #'contract--name args))))
-   (format "%s" value)))
+           (mapcar #'contract--name args))))
+    (format "%s" value)))
 
 (defmacro contract--oref-or-oset (object slot form)
   "Retrieve the (unquoted) slot SLOT of OBJECT or set it to the result of FORM."
@@ -801,66 +766,52 @@ cached."
        (oref ,object ,slot)
      (oset ,object ,slot ,form)))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract-contract))
- (-> t contract-ast)
- "Get the AST of CONTRACT.
+(contract--bootstrap-defmethod contract--ast ((contract contract-contract))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT.
 
 Subclasses must override this method or set the AST slot."
- (oref contract ast))
+  (oref contract ast))
 
-(contract--bootstrap-defmethod
- contract-name
- ((contract contract-contract))
- (-> t string)
- "Get the cached name of CONTRACT or compute it from the AST.
+(contract--bootstrap-defmethod contract-name ((contract contract-contract))
+  (-> t string)
+  "Get the cached name of CONTRACT or compute it from the AST.
 
 Should not be overridden by subclasses, this method is \"final\"."
- ;; TODO: bootstrap-defmethod
- ;; (-> contract-contract-p string)
- (contract--oref-or-oset contract name (contract--name contract)))
+  ;; TODO: bootstrap-defmethod
+  ;; (-> contract-contract-p string)
+  (contract--oref-or-oset contract name (contract--name contract)))
 
-(contract--bootstrap-defmethod
- contract--format
- ((contract contract-contract))
- (-> t string)
- "Get the format string of CONTRACT.
+(contract--bootstrap-defmethod contract--format ((contract contract-contract))
+  (-> t string)
+  "Get the format string of CONTRACT.
 
 Subclasses must override this method or set the format slot."
- (contract--oref-or-oset contract format "Unexpected or incorrect value: %s"))
+  (contract--oref-or-oset contract format "Unexpected or incorrect value: %s"))
 
-(contract--bootstrap-defmethod
- contract-is-first-order
- ((contract contract-contract))
- (-> t boolean)
- "Compute whether this contract CONTRACT is first-order."
- (contract--oref-or-oset contract is-first-order nil))
+(contract--bootstrap-defmethod contract-is-first-order ((contract contract-contract))
+  (-> t boolean)
+  "Compute whether this contract CONTRACT is first-order."
+  (contract--oref-or-oset contract is-first-order nil))
 
-(contract--bootstrap-defmethod
- contract-is-constant-time
- ((contract contract-contract))
- (-> t boolean)
- "Compute whether this contract CONTRACT is constant-time."
- (contract--oref-or-oset contract is-constant-time nil))
+(contract--bootstrap-defmethod contract-is-constant-time ((contract contract-contract))
+  (-> t boolean)
+  "Compute whether this contract CONTRACT is constant-time."
+  (contract--oref-or-oset contract is-constant-time nil))
 
-(contract--bootstrap-defmethod
- contract-first-order
- ((contract contract-contract))
- (-> t (contract--arity-t 1))
- "Get the first-order check of CONTRACT."
- (oref contract first-order))
+(contract--bootstrap-defmethod contract-first-order ((contract contract-contract))
+  (-> t (contract--arity-t 1))
+  "Get the first-order check of CONTRACT."
+  (oref contract first-order))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract-contract))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (error
-  (format
-   "Subclasses of `contract-contract' must override `contract-projection': %s"
-   (when (eieio-object-p contract)
-     (eieio-object-class-name contract)))))
+(contract--bootstrap-defmethod contract-projection ((contract contract-contract))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (error
+   (format
+    "Subclasses of `contract-contract' must override `contract-projection': %s"
+    (when (eieio-object-p contract)
+      (eieio-object-class-name contract)))))
 
 (eval-when-compile
   (defsubst contract--make-late-neg-projection (proj)
@@ -888,124 +839,111 @@ Subclasses must override this method or set the format slot."
   "Initialize PRED with some default slot values."
   (oset pred is-first-order t))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((pred contract--predicate))
- (-> t (contract--arity-t 1))
- "Compute the projection function for PRED."
- (contract--oref-or-oset
-  pred
-  proj
-  (contract--make-late-neg-projection
-   (lambda (blame val)
-     (if (funcall (contract-first-order pred) val)
-         val
-       (contract-raise-violation
-        (contract--make-violation
-         :blame blame
-         :contract pred
-         :callstack (contract--function-stack))
-        val))))))
+(contract--bootstrap-defmethod contract-projection ((pred contract--predicate))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for PRED."
+  (contract--oref-or-oset
+   pred
+   proj
+   (contract--make-late-neg-projection
+    (lambda (blame val)
+      (if (funcall (contract-first-order pred) val)
+          val
+        (contract-raise-violation
+         (contract--make-violation
+          :blame blame
+          :contract pred
+          :callstack (contract--function-stack))
+         val))))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((pred contract--predicate))
- (-> t (contract--arity-t 1))
- "Compute the projection function for PRED."
- (contract--oref-or-oset
-  pred
-  proj
-  (contract--make-late-neg-projection
-   (lambda (blame val)
-     (if (funcall (contract-first-order pred) val)
-         val
-       (contract-raise-violation
-        (contract--make-violation
-         :blame blame
-         :contract pred
-         :callstack (contract--function-stack))
-        val))))))
+(contract--bootstrap-defmethod contract-projection ((pred contract--predicate))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for PRED."
+  (contract--oref-or-oset
+   pred
+   proj
+   (contract--make-late-neg-projection
+    (lambda (blame val)
+      (if (funcall (contract-first-order pred) val)
+          val
+        (contract-raise-violation
+         (contract--make-violation
+          :blame blame
+          :contract pred
+          :callstack (contract--function-stack))
+         val))))))
 
-(contract--bootstrap-defun
- contract-predicate
- (func format name &optional arguments constant-time)
- (-> function string symbol &optional (or nil list) (or nil boolean)
-     contract-contract)
- "Create a first-order contract from a predicate FUNC.
+(contract--bootstrap-defun contract-predicate
+    (func format name &optional arguments constant-time)
+  (-> function string symbol &optional (or nil list) (or nil boolean)
+      contract-contract)
+  "Create a first-order contract from a predicate FUNC.
 
 The contract's name will be NAME, FORMAT is used to format error messages,
 CONSTANT-TIME indicates whether the contract is considered \"fast\"."
- (contract--predicate
-  :ast (contract--make-ast :constructor name :arguments arguments)
-  :format format
-  :is-constant-time constant-time
-  :first-order func))
+  (contract--predicate
+   :ast (contract--make-ast :constructor name :arguments arguments)
+   :format format
+   :is-constant-time constant-time
+   :first-order func))
 
 ;;;;;; Equality: eq-c, equal-c, eql-c, =-c
 
-(contract--bootstrap-defun
- contract-eq-c
- (val)
- (-> t contract-contract)
- "Contract to check that a value is `eq' to VAL."
- (contract-predicate
-  (lambda (value) (eq val value))
-  (concat
-   (format
-    "Expected a value that is `eq' to %s"
-    (contract--trunc-format 30 val))
-   ", but got %s")
-  'contract-eq-c
-  (list val)
-  t))
+(contract--bootstrap-defun contract-eq-c (val)
+  (-> t contract-contract)
+  "Contract to check that a value is `eq' to VAL."
+  (contract-predicate
+   (lambda (value) (eq val value))
+   (concat
+    (format
+     "Expected a value that is `eq' to %s"
+     (contract--trunc-format 30 val))
+    ", but got %s")
+   'contract-eq-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract-equal-c
- (val)
- (-> t contract-contract)
- "Contract to check that a value is `equal' to VAL."
- (contract-predicate
-  (lambda (value) (equal val value))
-  (concat
-   (format
-    "Expected a value that is `equal' to %s"
-    (contract--trunc-format 30 val))
-   ", but got %s")
-  'contract-equal-c
-  (list val)
-  t))
+(contract--bootstrap-defun contract-equal-c (val)
+  (-> t contract-contract)
+  "Contract to check that a value is `equal' to VAL."
+  (contract-predicate
+   (lambda (value) (equal val value))
+   (concat
+    (format
+     "Expected a value that is `equal' to %s"
+     (contract--trunc-format 30 val))
+    ", but got %s")
+   'contract-equal-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract-eql-c
- (val)
- (-> t contract-contract)
- "Contract to check that a value is `eql' to VAL."
- (contract-predicate
-  (lambda (value) (eql val value))
-  (concat
-   (format
-    "Expected a value that is `eql' to %s"
-    (contract--trunc-format 30 val))
-   ", but got %s")
-  'contract-eql-c
-  (list val)
-  t))
+(contract--bootstrap-defun contract-eql-c (val)
+  (-> t contract-contract)
+  "Contract to check that a value is `eql' to VAL."
+  (contract-predicate
+   (lambda (value) (eql val value))
+   (concat
+    (format
+     "Expected a value that is `eql' to %s"
+     (contract--trunc-format 30 val))
+    ", but got %s")
+   'contract-eql-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract-=-c
- (val)
- (-> t contract-contract)
- "Contract to check that a value is `=' to VAL."
- (contract-predicate
-  (lambda (value) (= val value))
-  (concat
-   (format
-    "Expected a value that is `=' to %s"
-    (contract--trunc-format 30 val))
-   ", but got %s")
-  'contract-=-c
-  (list val)
-  t))
+(contract--bootstrap-defun contract-=-c (val)
+  (-> t contract-contract)
+  "Contract to check that a value is `=' to VAL."
+  (contract-predicate
+   (lambda (value) (= val value))
+   (concat
+    (format
+     "Expected a value that is `=' to %s"
+     (contract--trunc-format 30 val))
+    ", but got %s")
+   'contract-=-c
+   (list val)
+   t))
 
 ;;;;;; Other
 
@@ -1047,12 +985,10 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
 
 ;;;;;; Booleans
 
-(defconst contract-nil-c
-  (contract-eq-c nil)
+(defconst contract-nil-c (contract-eq-c nil)
   "Contract that checks that a value is `eq' to nil.")
 
-(defconst contract-t-c
-  (contract-eq-c t)
+(defconst contract-t-c (contract-eq-c t)
   "Contract that checks that a value is `eq' to t.")
 
 (defconst contract-boolean-c
@@ -1084,73 +1020,65 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
    t)
   "Contract that checks that a value is `natnump'.")
 
-(contract--bootstrap-defun
- contract-<-c
- (val)
- (-> number contract-contract)
- "Contract to check that a value is less than VAL.
+(contract--bootstrap-defun contract-<-c (val)
+  (-> number contract-contract)
+  "Contract to check that a value is less than VAL.
 
 >> (contract-contract-p (contract-<-c 0))
 => t"
- (contract-predicate
-  (lambda (less) (and (number-or-marker-p less) (< less val)))
-  (concat
-   (format "Expected a value less than %s" val)
-   ", but got %s")
-  'contract-<-c
-  (list val)
-  t))
+  (contract-predicate
+   (lambda (less) (and (number-or-marker-p less) (< less val)))
+   (concat
+    (format "Expected a value less than %s" val)
+    ", but got %s")
+   'contract-<-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract->-c
- (val)
- (-> number-or-marker contract-contract)
- "Contract to check that a value is less than VAL.
+(contract--bootstrap-defun contract->-c (val)
+  (-> number-or-marker contract-contract)
+  "Contract to check that a value is less than VAL.
 
 >> (contract-contract-p (contract->-c 0))
 => t"
- (contract-predicate
-  (lambda (greater) (and (number-or-marker-p greater) (> greater val)))
-  (concat
-   (format "Expected a value greater than %s" val)
-   ", but got %s")
-  'contract->-c
-  (list val)
-  t))
+  (contract-predicate
+   (lambda (greater) (and (number-or-marker-p greater) (> greater val)))
+   (concat
+    (format "Expected a value greater than %s" val)
+    ", but got %s")
+   'contract->-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract-<=-c
- (val)
- (-> number contract-contract)
- "Contract to check that a value is less than VAL.
+(contract--bootstrap-defun contract-<=-c (val)
+  (-> number contract-contract)
+  "Contract to check that a value is less than VAL.
 
 >> (contract-contract-p (contract-<=-c 0))
 => t"
- (contract-predicate
-  (lambda (less) (and (number-or-marker-p less) (<= less val)))
-  (concat
-   (format "Expected a value less than or equal to %s" val)
-   ", but got %s")
-  'contract-<=-c
-  (list val)
-  t))
+  (contract-predicate
+   (lambda (less) (and (number-or-marker-p less) (<= less val)))
+   (concat
+    (format "Expected a value less than or equal to %s" val)
+    ", but got %s")
+   'contract-<=-c
+   (list val)
+   t))
 
-(contract--bootstrap-defun
- contract->=-c
- (val)
- (-> number-or-marker contract-contract)
- "Contract to check that a value is less than VAL.
+(contract--bootstrap-defun contract->=-c (val)
+  (-> number-or-marker contract-contract)
+  "Contract to check that a value is less than VAL.
 
 >=> (contract-contract-p (contract->-c 0))
 =>= t"
- (contract-predicate
-  (lambda (greater) (and (number-or-marker-p greater) (>= greater val)))
-  (concat
-   (format "Expected a value greater than or equal to %s" val)
-   ", but got %s")
-  'contract->=-c
-  (list val)
-  t))
+  (contract-predicate
+   (lambda (greater) (and (number-or-marker-p greater) (>= greater val)))
+   (concat
+    (format "Expected a value greater than or equal to %s" val)
+    ", but got %s")
+   'contract->=-c
+   (list val)
+   t))
 
 ;;;;;; Strings
 
@@ -1163,70 +1091,62 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
    t)
   "Contract that checks that a value is `stringp'.")
 
-(contract--bootstrap-defun
- contract-string-suffix-c
- (str)
- (-> string contract-contract)
- "Contract to check that a string is a suffix of STR.
+(contract--bootstrap-defun contract-string-suffix-c (str)
+  (-> string contract-contract)
+  "Contract to check that a string is a suffix of STR.
 
 >> (contract-contract-p (contract-string-suffix-c \"haystack\"))
 => t"
- (contract-predicate
-  (lambda (sub) (and (stringp sub) (string-suffix-p sub str)))
-  (concat
-   (format "Expected a suffix of %s" str)
-   ", but got %s")
-  'contract-string-suffix-c
-  (list str)
-  t))
+  (contract-predicate
+   (lambda (sub) (and (stringp sub) (string-suffix-p sub str)))
+   (concat
+    (format "Expected a suffix of %s" str)
+    ", but got %s")
+   'contract-string-suffix-c
+   (list str)
+   t))
 
-(contract--bootstrap-defun
- contract-string-prefix-c
- (str)
- (-> string contract-contract)
- "Contract to check that a string is a prefix of STR.
+(contract--bootstrap-defun contract-string-prefix-c (str)
+  (-> string contract-contract)
+  "Contract to check that a string is a prefix of STR.
 
 >> (contract-contract-p (contract-string-prefix-c \"haystack\"))
 => t"
- (contract-predicate
-  (lambda (sub) (and (stringp sub) (string-prefix-p sub str)))
-  (concat
-   (format "Expected a prefix of %s" str)
-   ", but got %s")
-  'contract-string-prefix-c
-  (list str)
-  t))
+  (contract-predicate
+   (lambda (sub) (and (stringp sub) (string-prefix-p sub str)))
+   (concat
+    (format "Expected a prefix of %s" str)
+    ", but got %s")
+   'contract-string-prefix-c
+   (list str)
+   t))
 
-(contract--bootstrap-defun
- contract-substring-c
- (str)
- (-> string contract-contract)
- "Contract to check that a string is a substring of STR.
+(contract--bootstrap-defun contract-substring-c (str)
+  (-> string contract-contract)
+  "Contract to check that a string is a substring of STR.
 
 >> (contract-contract-p (contract-substring-c \"haystack\"))
 => t"
- (contract-predicate
-  (lambda (sub) (and (stringp sub) (string-match-p (regexp-quote sub) str)))
-  (concat
-   (format "Expected a substring of %s" str)
-   ", but got %s")
-  'contract-substring-c
-  (list str)
-  nil))
+  (contract-predicate
+   (lambda (sub) (and (stringp sub) (string-match-p (regexp-quote sub) str)))
+   (concat
+    (format "Expected a substring of %s" str)
+    ", but got %s")
+   'contract-substring-c
+   (list str)
+   nil))
 
-(contract--bootstrap-defun
- contract-match-c
- (rgx)
- (-> string contract-contract)
- "Contract to check that a string matches a regex RGX."
- (contract-predicate
-  (lambda (str) (and (stringp str) (string-match-p rgx str)))
-  (concat
-   (format "Expected a string that matched %s" rgx)
-   ", but got %s")
-  'contract-match-c
-  (list rgx)
-  nil))
+(contract--bootstrap-defun contract-match-c (rgx)
+  (-> string contract-contract)
+  "Contract to check that a string matches a regex RGX."
+  (contract-predicate
+   (lambda (str) (and (stringp str) (string-match-p rgx str)))
+   (concat
+    (format "Expected a string that matched %s" rgx)
+    ", but got %s")
+   'contract-match-c
+   (list rgx)
+   nil))
 
 ;;;;;; Sequences
 
@@ -1239,19 +1159,17 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
    t)
   "Contract that checks that a value is `sequencep'.")
 
-(contract--bootstrap-defun
- contract-length-c
- (len)
- (-> natnum contract-contract)
- "Check sequence length is LEN."
- (contract-predicate
-  (lambda (seq) (and (sequencep seq) (= (length seq) len)))
-  (concat
-   (format "Expected a sequence of length %s" len)
-   ", but got %s")
-  'contract-substring-c
-  (list len)
-  t))
+(contract--bootstrap-defun contract-length-c (len)
+  (-> natnum contract-contract)
+  "Check sequence length is LEN."
+  (contract-predicate
+   (lambda (seq) (and (sequencep seq) (= (length seq) len)))
+   (concat
+    (format "Expected a sequence of length %s" len)
+    ", but got %s")
+   'contract-substring-c
+   (list len)
+   t))
 
 ;;;;;; EIEIO
 ;;;;; any-c
@@ -1265,25 +1183,21 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
   (oset anyc first-order (lambda (_) t))
   (oset anyc is-constant-time t))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((anyc contract--any-c))
- (-> t contract-ast)
- "Get the AST of ANYC."
- (contract--oref-or-oset
-  anyc
-  ast
-  (contract--make-ast :constructor 'contract-any-c :arguments '())))
+(contract--bootstrap-defmethod contract--ast ((anyc contract--any-c))
+  (-> t contract-ast)
+  "Get the AST of ANYC."
+  (contract--oref-or-oset
+   anyc
+   ast
+   (contract--make-ast :constructor 'contract-any-c :arguments '())))
 
-(contract--bootstrap-defmethod
- contract--format
- ((anyc contract--any-c))
- (-> t string)
- "Get the format string of ANYC."
- (contract--oref-or-oset
-  anyc
-  format
-  "Expected any value, got %s. This is probably a bug in contract.el."))
+(contract--bootstrap-defmethod contract--format ((anyc contract--any-c))
+  (-> t string)
+  "Get the format string of ANYC."
+  (contract--oref-or-oset
+   anyc
+   format
+   "Expected any value, got %s. This is probably a bug in contract.el."))
 
 (defconst
   contract-any-c
@@ -1301,48 +1215,40 @@ CONSTANT-TIME indicates whether the contract is considered \"fast\"."
   (oset nonec first-order (lambda (_) nil))
   (oset nonec is-constant-time t))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((nonec contract--none-c))
- (-> t contract-ast)
- "Get the AST of NONEC."
- (contract--oref-or-oset
-  nonec
-  ast
-  (contract--make-ast :constructor 'contract-none-c :arguments '())))
+(contract--bootstrap-defmethod contract--ast ((nonec contract--none-c))
+  (-> t contract-ast)
+  "Get the AST of NONEC."
+  (contract--oref-or-oset
+   nonec
+   ast
+   (contract--make-ast :constructor 'contract-none-c :arguments '())))
 
-(contract--bootstrap-defmethod
- contract--format
- ((nonec contract--none-c))
- (-> t string)
- "Get the format string of NONEC."
- (contract--oref-or-oset nonec format "`nonec' rejects every value, got %s"))
+(contract--bootstrap-defmethod contract--format ((nonec contract--none-c))
+  (-> t string)
+  "Get the format string of NONEC."
+  (contract--oref-or-oset nonec format "`nonec' rejects every value, got %s"))
 
 (defconst contract-none-c (contract--none-c) "Reject every value.")
 
 ;;;; Coercion
 
-(contract--bootstrap-defun
- contract--coerce-predicate
- (pred)
- (-> (and symbol function) contract-contract)
- "Coerce function symbol PRED to a first-order contract."
- (contract-predicate
-  pred
-  (concat
-   (format
-    "Expected a value that is %s"
-    (symbol-name pred))
-   ", but got %s")
-  pred))
+(contract--bootstrap-defun contract--coerce-predicate (pred)
+  (-> (and symbol function) contract-contract)
+  "Coerce function symbol PRED to a first-order contract."
+  (contract-predicate
+   pred
+   (concat
+    (format
+     "Expected a value that is %s"
+     (symbol-name pred))
+    ", but got %s")
+   pred))
 
 ;; TODO: Just return nil on failure, have another version that raises. Then use
 ;; in preconditions, etc.
-(contract--bootstrap-defun
- contract--coerce-runtime
- (val)
- (-> t contract-contract)
- "Coerce VAL to a contract at runtime.
+(contract--bootstrap-defun contract--coerce-runtime (val)
+  (-> t contract-contract)
+  "Coerce VAL to a contract at runtime.
 
 Works in case VAL is:
 
@@ -1361,19 +1267,19 @@ Works in case VAL is:
 => t
 >> (condition-case nil (contract--coerce-runtime 0) (error nil))
 => nil"
- (cond
-  ((equal nil val) contract-nil-c)
-  ((equal t val) contract-t-c)
-  ((and
-    (symbolp val)
-    (functionp val)
-    (contract--arity-at-least val 1))
-   (contract--coerce-predicate val))
-  ((object-of-class-p val 'contract-contract) val)
-  (t (error
-      "Couldn't coerce value to contract; value: %s; type: %s"
-      (contract--trunc-format 40 val)
-      (contract--trunc-format 40 (type-of val))))))
+  (cond
+   ((equal nil val) contract-nil-c)
+   ((equal t val) contract-t-c)
+   ((and
+     (symbolp val)
+     (functionp val)
+     (contract--arity-at-least val 1))
+    (contract--coerce-predicate val))
+   ((object-of-class-p val 'contract-contract) val)
+   (t (error
+       "Couldn't coerce value to contract; value: %s; type: %s"
+       (contract--trunc-format 40 val)
+       (contract--trunc-format 40 (type-of val))))))
 
 (eval-when-compile
   (defmacro contract--coerce (val)
@@ -1414,11 +1320,9 @@ Works in case VAL is:
      func
      "Expected a contract object.")))
 
-(contract--bootstrap-defun
- contract-check
- (contract value)
- (-> contract-contract t boolean)
- "Check the first-order parts of CONTRACT on VALUE.
+(contract--bootstrap-defun contract-check (contract value)
+  (-> contract-contract t boolean)
+  "Check the first-order parts of CONTRACT on VALUE.
 
 >> (contract-check contract-nil-c nil)
 => t
@@ -1426,20 +1330,18 @@ Works in case VAL is:
 => t
 >> (contract-check contract-t-c nil)
 => nil"
- (let ((ret (funcall (contract-first-order contract) value)))
-   (unless (booleanp ret)
-     (error (format
-             "Bad `contract-first-order' on %s"
-             (contract--trunc-format
-              30
-              (contract-name contract)))))
-   ret))
+  (let ((ret (funcall (contract-first-order contract) value)))
+    (unless (booleanp ret)
+      (error (format
+              "Bad `contract-first-order' on %s"
+              (contract--trunc-format
+               30
+               (contract-name contract)))))
+    ret))
 
-(contract--bootstrap-defun
- contract-apply
- (contract value blame)
- (-> t t contract-valid-blame t)
- "Apply CONTRACT to VALUE with blame BLAME.
+(contract--bootstrap-defun contract-apply (contract value blame)
+  (-> t t contract-valid-blame t)
+  "Apply CONTRACT to VALUE with blame BLAME.
 
 If this CONTRACT is first-order, this function will check that VALUE satisfies
 it, and return VALUE.  Otherwise, it will check that VALUE satisfies the
@@ -1451,30 +1353,26 @@ after applying VALUE.
 => nil
 >> (contract-apply contract-t-c t (contract-make-blame))
 => t"
- (funcall
-  (funcall (contract-projection (contract--coerce-runtime contract)) blame)
-  value
-  (contract-blame-negative-party blame)))
+  (funcall
+   (funcall (contract-projection (contract--coerce-runtime contract)) blame)
+   value
+   (contract-blame-negative-party blame)))
 
 ;;;; Builders
 
-(contract--bootstrap-defsubst
- contract--are-constant-time
- (contracts)
- (-> list boolean)
- "Are CONTRACTS all constant-time?"
- (cl-loop for c in contracts
-          if (not (contract-is-constant-time c)) return nil
-          finally return t))
+(contract--bootstrap-defsubst contract--are-constant-time (contracts)
+  (-> list boolean)
+  "Are CONTRACTS all constant-time?"
+  (cl-loop for c in contracts
+           if (not (contract-is-constant-time c)) return nil
+           finally return t))
 
-(contract--bootstrap-defsubst
- contract--are-first-order
- (contracts)
- (-> list boolean)
- "Are CONTRACTS all first-order?"
- (cl-loop for c in contracts
-          if (not (contract-is-first-order c)) return nil
-          finally return t))
+(contract--bootstrap-defsubst contract--are-first-order (contracts)
+  (-> list boolean)
+  "Are CONTRACTS all first-order?"
+  (cl-loop for c in contracts
+           if (not (contract-is-first-order c)) return nil
+           finally return t))
 
 ;; TODO: This is to be used in avoiding lambdas in contract->d, see below.
 ;;
@@ -1558,103 +1456,99 @@ after applying VALUE.
   ;; Can't guarantee that runtime-generated contracts will be constant-time
   (oset contract is-constant-time nil))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract-->d))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract->d
-   :arguments (oref contract name-contract-pairs))))
+(contract--bootstrap-defmethod contract--ast ((contract contract-->d))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract->d
+    :arguments (oref contract name-contract-pairs))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract-->d))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (let ((num-arg-contracts (length (oref contract arg-contract-lambdas))))
-    (lambda (pos-blame)
-      ;; TODO: Add context to argument and return blames here?
-      (let ((blame (contract--blame-add-context pos-blame "contract->d")))
-        (lambda (function-value neg-party)
-          (contract--add-negative-party blame neg-party)
-          ;; Check the first-order bits before returning the new closure that
-          ;; applies the whole contract.
-          (contract--check-arity
-           contract
-           num-arg-contracts
-           blame
-           function-value)
-          (lambda (&rest args)
-            (contract--check-num-args contract num-arg-contracts blame args)
-            (cl-loop
-             for n from 0 to (1- num-arg-contracts)
-             ;; TODO: Allocate argument blame outside the lambda?
-             for arg-blame =
-             (contract--blame-set-positive-party
-              (contract--blame-swap-add-context
-               blame
-               (concat
-                "in the "
-                (number-to-string n)
-                "in th argument of"))
-              "the contract for the return value")
-             ;; TODO: Don't use nth here, maybe zip instead
-             collect
+(contract--bootstrap-defmethod contract-projection ((contract contract-->d))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (let ((num-arg-contracts (length (oref contract arg-contract-lambdas))))
+     (lambda (pos-blame)
+       ;; TODO: Add context to argument and return blames here?
+       (let ((blame (contract--blame-add-context pos-blame "contract->d")))
+         (lambda (function-value neg-party)
+           (contract--add-negative-party blame neg-party)
+           ;; Check the first-order bits before returning the new closure that
+           ;; applies the whole contract.
+           (contract--check-arity
+            contract
+            num-arg-contracts
+            blame
+            function-value)
+           (lambda (&rest args)
+             (contract--check-num-args contract num-arg-contracts blame args)
+             (cl-loop
+              for n from 0 to (1- num-arg-contracts)
+              ;; TODO: Allocate argument blame outside the lambda?
+              for arg-blame =
+              (contract--blame-set-positive-party
+               (contract--blame-swap-add-context
+                blame
+                (concat
+                 "in the "
+                 (number-to-string n)
+                 "in th argument of"))
+               "the contract for the return value")
+              ;; TODO: Don't use nth here, maybe zip instead
+              collect
+              (contract-apply
+               (apply (nth n (oref contract arg-contract-lambdas)) args)
+               (nth n args)
+               arg-blame))
              (contract-apply
-              (apply (nth n (oref contract arg-contract-lambdas)) args)
-              (nth n args)
-              arg-blame))
-            (contract-apply
-             (apply
-              (oref contract ret-contract-lambda)
-              ;; NOTE: The blame change here is what makes this 'indy', i.e.
-              ;; conform to the specification laid out in "Correct Blame for
-              ;; Contracts: No More Scapegoating".
-              (cl-loop
-               for n from 0 to (1- num-arg-contracts)
-               ;; TODO: Allocate argument blame outside the lambda?
-               for arg-blame =
-               (contract--blame-set-positive-party
-                (contract--blame-swap-add-context
-                 blame
-                 (concat
-                  "in the "
-                  (number-to-string n)
-                  "in th argument of"))
-                "the contract for the return value")
-               ;; TODO: Don't use nth here, maybe zip instead
-               collect
-               (contract-apply
-                (apply (nth n (oref contract arg-contract-lambdas)) args)
-                (nth n args)
-                arg-blame)))
-             (apply
-              function-value
-              (cl-loop
-               for n from 0 to (1- num-arg-contracts)
-               ;; TODO: Allocate argument blame outside the lambda?
-               for arg-blame = (contract--blame-swap-add-context
-                                blame
-                                (concat
-                                 "in the "
-                                 (number-to-string n)
-                                 "th argument of"))
-               ;; TODO: Don't use nth here, maybe zip instead
-               collect
-               (contract-apply
-                (apply (nth n (oref contract arg-contract-lambdas)) args)
-                (nth n args)
-                arg-blame)))
-             (contract--blame-add-context
-              blame
-              "in the return value of")))))))))
+              (apply
+               (oref contract ret-contract-lambda)
+               ;; NOTE: The blame change here is what makes this 'indy', i.e.
+               ;; conform to the specification laid out in "Correct Blame for
+               ;; Contracts: No More Scapegoating".
+               (cl-loop
+                for n from 0 to (1- num-arg-contracts)
+                ;; TODO: Allocate argument blame outside the lambda?
+                for arg-blame =
+                (contract--blame-set-positive-party
+                 (contract--blame-swap-add-context
+                  blame
+                  (concat
+                   "in the "
+                   (number-to-string n)
+                   "in th argument of"))
+                 "the contract for the return value")
+                ;; TODO: Don't use nth here, maybe zip instead
+                collect
+                (contract-apply
+                 (apply (nth n (oref contract arg-contract-lambdas)) args)
+                 (nth n args)
+                 arg-blame)))
+              (apply
+               function-value
+               (cl-loop
+                for n from 0 to (1- num-arg-contracts)
+                ;; TODO: Allocate argument blame outside the lambda?
+                for arg-blame = (contract--blame-swap-add-context
+                                 blame
+                                 (concat
+                                  "in the "
+                                  (number-to-string n)
+                                  "th argument of"))
+                ;; TODO: Don't use nth here, maybe zip instead
+                collect
+                (contract-apply
+                 (apply (nth n (oref contract arg-contract-lambdas)) args)
+                 (nth n args)
+                 arg-blame)))
+              (contract--blame-add-context
+               blame
+               "in the return value of")))))))))
 
 ;; TODO: Optimize to not create a lambda when an argument contract has no
 ;; dependency on other arguments, and in this case to coerce the "contract-like"
@@ -1724,77 +1618,71 @@ return value."
   "Initialize CONTRACT with some default slot values."
   (oset contract is-first-order nil))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract-->))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract->
-   :arguments (append (oref contract arg-contracts)
-                      (list (oref contract ret-contract))))))
+(contract--bootstrap-defmethod contract--ast ((contract contract-->))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract->
+    :arguments (append (oref contract arg-contracts)
+                       (list (oref contract ret-contract))))))
 
-(contract--bootstrap-defmethod
- contract-is-constant-time
- ((contract contract-->))
- (-> t boolean)
- "Compute whether this contract CONTRACT is constant-time."
- (contract--oref-or-oset
-  contract
-  is-constant-time
-  (contract--are-constant-time
-   (cons
-    (oref contract ret-contract)
-    (oref contract arg-contracts)))))
+(contract--bootstrap-defmethod contract-is-constant-time ((contract contract-->))
+  (-> t boolean)
+  "Compute whether this contract CONTRACT is constant-time."
+  (contract--oref-or-oset
+   contract
+   is-constant-time
+   (contract--are-constant-time
+    (cons
+     (oref contract ret-contract)
+     (oref contract arg-contracts)))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract-->))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (let ((num-arg-contracts (length (oref contract arg-contracts))))
-    (lambda (pos-blame)
-      (contract--precond-expect-blame "projection of contract->" pos-blame)
-      (let* ((name (contract-name contract))
-             (blame (contract--blame-add-context pos-blame name)))
-        ;; TODO: Add context to argument and return blames here.
-        (lambda (function-value neg-party)
-          (contract--add-negative-party blame neg-party)
-          ;; Check the first-order bits before returning the new closure that
-          ;; applies the whole contract.
-          (contract--check-arity
-           contract
-           num-arg-contracts
-           blame
-           function-value)
-          (lambda (&rest args)
-            (contract--check-num-args contract num-arg-contracts blame args)
-            (contract-apply
-             (oref contract ret-contract)
-             (apply
-              function-value
-              (cl-loop
-               for n from 0 to (1- num-arg-contracts)
-               ;; TODO: Allocate argument blame outside the lambda?
-               for arg-blame = (contract--blame-swap-add-context
-                                blame
-                                (concat
-                                 "in the "
-                                 (number-to-string n)
-                                 "th argument of"))
-               ;; TODO: Don't use nth here, maybe zip instead
-               collect
-               (contract-apply
-                (nth n (oref contract arg-contracts))
-                (nth n args)
-                arg-blame)))
-             (contract--blame-add-context blame "in the return value of")))))))))
+(contract--bootstrap-defmethod contract-projection ((contract contract-->))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (let ((num-arg-contracts (length (oref contract arg-contracts))))
+     (lambda (pos-blame)
+       (contract--precond-expect-blame "projection of contract->" pos-blame)
+       (let* ((name (contract-name contract))
+              (blame (contract--blame-add-context pos-blame name)))
+         ;; TODO: Add context to argument and return blames here.
+         (lambda (function-value neg-party)
+           (contract--add-negative-party blame neg-party)
+           ;; Check the first-order bits before returning the new closure that
+           ;; applies the whole contract.
+           (contract--check-arity
+            contract
+            num-arg-contracts
+            blame
+            function-value)
+           (lambda (&rest args)
+             (contract--check-num-args contract num-arg-contracts blame args)
+             (contract-apply
+              (oref contract ret-contract)
+              (apply
+               function-value
+               (cl-loop
+                for n from 0 to (1- num-arg-contracts)
+                ;; TODO: Allocate argument blame outside the lambda?
+                for arg-blame = (contract--blame-swap-add-context
+                                 blame
+                                 (concat
+                                  "in the "
+                                  (number-to-string n)
+                                  "th argument of"))
+                ;; TODO: Don't use nth here, maybe zip instead
+                collect
+                (contract-apply
+                 (nth n (oref contract arg-contracts))
+                 (nth n args)
+                 arg-blame)))
+              (contract--blame-add-context blame "in the return value of")))))))))
 
 (defmacro contract-> (&rest contracts)
   "Construct a contract for a function out of CONTRACTS.
@@ -1824,37 +1712,31 @@ The last contract is the contract for the function's return value.
     :reader contract--subcontracts))
   :abstract t)
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract--builder-c))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (error
-  (format
-   "Subclasses of `contract--builder-c must override `contract--ast': %s"
-   (when (eieio-object-p contract)
-     (eieio-object-class-name contract)))))
+(contract--bootstrap-defmethod contract--ast ((contract contract--builder-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (error
+   (format
+    "Subclasses of `contract--builder-c must override `contract--ast': %s"
+    (when (eieio-object-p contract)
+      (eieio-object-class-name contract)))))
 
 
-(contract--bootstrap-defmethod
- contract-is-constant-time
- ((contract contract--builder-c))
- (-> t boolean)
- "Compute whether this contract CONTRACT is constant-time."
- (contract--oref-or-oset
-  contract
-  is-constant-time
-  (contract--are-constant-time (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract-is-constant-time ((contract contract--builder-c))
+  (-> t boolean)
+  "Compute whether this contract CONTRACT is constant-time."
+  (contract--oref-or-oset
+   contract
+   is-constant-time
+   (contract--are-constant-time (contract--subcontracts contract))))
 
-(contract--bootstrap-defmethod
- contract-is-first-order
- ((contract contract--builder-c))
- (-> t boolean)
- "Compute whether this contract CONTRACT is constant-time."
- (contract--oref-or-oset
-  contract
-  is-first-order
-  (contract--are-first-order (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract-is-first-order ((contract contract--builder-c))
+  (-> t boolean)
+  "Compute whether this contract CONTRACT is constant-time."
+  (contract--oref-or-oset
+   contract
+   is-first-order
+   (contract--are-first-order (contract--subcontracts contract))))
 
 ;;;;; and-c
 
@@ -1872,41 +1754,35 @@ The last contract is the contract for the function's return value.
       (contract (contract--subcontracts contract))
       (funcall (contract-first-order contract) v)))))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract--and-c))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract-and
-   :arguments (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract--ast ((contract contract--and-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract-and
+    :arguments (contract--subcontracts contract))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract--and-c))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (lambda (pos-blame)
-    (contract--precond-expect-blame "projection of contract-and-c" pos-blame)
-    ;; TODO: Call all the projections with pos-blame here?
-    (lambda (value neg-party)
-      (contract--ignore value)
-      (contract--add-negative-party pos-blame neg-party)
-      (dolist (c (contract--subcontracts contract))
-        (setq value (contract-apply c value pos-blame)))
-      value))))
+(contract--bootstrap-defmethod contract-projection ((contract contract--and-c))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (lambda (pos-blame)
+     (contract--precond-expect-blame "projection of contract-and-c" pos-blame)
+     ;; TODO: Call all the projections with pos-blame here?
+     (lambda (value neg-party)
+       (contract--ignore value)
+       (contract--add-negative-party pos-blame neg-party)
+       (dolist (c (contract--subcontracts contract))
+         (setq value (contract-apply c value pos-blame)))
+       value))))
 
-(contract--bootstrap-defun
- contract-and-c
- (&rest contracts)
- (-> &rest list contract-contract)      ; TODO: List of contracts
- "Construct a conjunction of the given CONTRACTS.
+(contract--bootstrap-defun contract-and-c (&rest contracts)
+  (-> &rest list contract-contract)      ; TODO: List of contracts
+  "Construct a conjunction of the given CONTRACTS.
 
 >> (contract-contract-p (contract-and-c contract-nil-c contract-nil-c))
 => t
@@ -1915,7 +1791,7 @@ The last contract is the contract for the function's return value.
 >> (contract-apply (contract-and-c contract-nil-c contract-nil-c) nil
      (contract-make-blame))
 => nil"
- (contract--and-c :subcontracts contracts))
+  (contract--and-c :subcontracts contracts))
 
 ;;;;; or-c
 
@@ -1946,57 +1822,51 @@ The last contract is the contract for the function's return value.
           (contract contracts)
           (funcall (contract-first-order contract) v)))))))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract--or-c))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract-or
-   :arguments (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract--ast ((contract contract--or-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract-or
+    :arguments (contract--subcontracts contract))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract--or-c))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (lambda (pos-blame)
-    (contract--precond-expect-blame "projection of contract-or-c" pos-blame)
-    ;; TODO: Call all the projections with pos-blame here?
-    (lambda (value neg-party)
-      (contract--ignore value)
-      (contract--add-negative-party pos-blame neg-party)
-      ;; TODO: Combine first-order parts?
-      (let ((contracts (contract--subcontracts contract)))
-        (if (not contracts)
-            value
-          (if (contract--any
-               (contract contracts)
-               (contract--doesnt-raise
-                (funcall
-                 (funcall (contract-projection contract) pos-blame)
-                 value
-                 neg-party)))
-              value
-            (contract-raise-violation
-             (contract--make-violation
-              ;; TODO format
-              :contract contract
-              :blame pos-blame
-              :callstack (contract--function-stack))
-             value))))))))
+(contract--bootstrap-defmethod contract-projection ((contract contract--or-c))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (lambda (pos-blame)
+     (contract--precond-expect-blame "projection of contract-or-c" pos-blame)
+     ;; TODO: Call all the projections with pos-blame here?
+     (lambda (value neg-party)
+       (contract--ignore value)
+       (contract--add-negative-party pos-blame neg-party)
+       ;; TODO: Combine first-order parts?
+       (let ((contracts (contract--subcontracts contract)))
+         (if (not contracts)
+             value
+           (if (contract--any
+                (contract contracts)
+                (contract--doesnt-raise
+                 (funcall
+                  (funcall (contract-projection contract) pos-blame)
+                  value
+                  neg-party)))
+               value
+             (contract-raise-violation
+              (contract--make-violation
+               ;; TODO format
+               :contract contract
+               :blame pos-blame
+               :callstack (contract--function-stack))
+              value))))))))
 
-(contract--bootstrap-defun
- contract-or-c
- (&rest contracts)
- (-> &rest list contract-contract)      ; TODO: List of contracts
- "Construct a conjunction of the given CONTRACTS.
+(contract--bootstrap-defun contract-or-c (&rest contracts)
+  (-> &rest list contract-contract)      ; TODO: List of contracts
+  "Construct a conjunction of the given CONTRACTS.
 
 >> (contract-contract-p (contract-or-c contract-nil-c contract-nil-c))
 => t
@@ -2005,18 +1875,16 @@ The last contract is the contract for the function's return value.
 >> (contract-apply (contract-or-c contract-nil-c contract-nil-c) nil
      (contract-make-blame))
 => nil"
- (unless (contract--are-first-order contracts)
-   (error "`contract-or-c' can only handle first-order contracts right now"))
- (contract--or-c :subcontracts contracts))
+  (unless (contract--are-first-order contracts)
+    (error "`contract-or-c' can only handle first-order contracts right now"))
+  (contract--or-c :subcontracts contracts))
 
 ;;;;; maybe-c
 
-(contract--bootstrap-defsubst
- contract-maybe-c
- (contract)
- (-> contract-contract contract-contract)
- "Check that a value is either nil or conforms to CONTRACT."
- (contract-or-c contract-nil-c contract))
+(contract--bootstrap-defsubst contract-maybe-c (contract)
+  (-> contract-contract contract-contract)
+  "Check that a value is either nil or conforms to CONTRACT."
+  (contract-or-c contract-nil-c contract))
 
 ;;;;; not-c
 
@@ -2037,55 +1905,49 @@ The last contract is the contract for the function's return value.
        (contract-first-order
         (car (contract--subcontracts contract))) v)))))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract--not-c))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract-not
-   :arguments (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract--ast ((contract contract--not-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract-not
+    :arguments (contract--subcontracts contract))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract--not-c))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (lambda (pos-blame)
-    (contract--precond-expect-blame "projection of contract-not-c" pos-blame)
-    (let ((late-neg
-           (funcall
-            (contract-projection (car (contract--subcontracts contract)))
-            pos-blame)))
-      (lambda (value neg-party)
-        (contract--add-negative-party pos-blame neg-party)
-        (if (contract--does-raise (funcall late-neg value neg-party))
-            value
-          (contract-raise-violation
-           (contract--make-violation
-            ;; TODO format
-            :contract contract
-            :blame pos-blame
-            :callstack (contract--function-stack))
-           value)))))))
+(contract--bootstrap-defmethod contract-projection ((contract contract--not-c))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (lambda (pos-blame)
+     (contract--precond-expect-blame "projection of contract-not-c" pos-blame)
+     (let ((late-neg
+            (funcall
+             (contract-projection (car (contract--subcontracts contract)))
+             pos-blame)))
+       (lambda (value neg-party)
+         (contract--add-negative-party pos-blame neg-party)
+         (if (contract--does-raise (funcall late-neg value neg-party))
+             value
+           (contract-raise-violation
+            (contract--make-violation
+             ;; TODO format
+             :contract contract
+             :blame pos-blame
+             :callstack (contract--function-stack))
+            value)))))))
 
-(contract--bootstrap-defun
- contract-not-c
- (contract)
- (-> contract-contract contract-contract)
- "Negate CONTRACT.
+(contract--bootstrap-defun contract-not-c (contract)
+  (-> contract-contract contract-contract)
+  "Negate CONTRACT.
 
 >> (contract-contract-p (contract-not-c contract-nil-c))
 => t"
- (unless (contract-is-first-order contract)
-   (error "`contract-not-c' can only handle first-order contracts right now"))
- (contract--not-c :subcontracts (list contract)))
+  (unless (contract-is-first-order contract)
+    (error "`contract-not-c' can only handle first-order contracts right now"))
+  (contract--not-c :subcontracts (list contract)))
 
 ;;;;; cons-of-c
 
@@ -2110,54 +1972,66 @@ The last contract is the contract for the function's return value.
        (contract-first-order
         (cdar (contract--subcontracts contract))) (cdr v))))))
 
-(contract--bootstrap-defmethod
- contract--ast
- ((contract contract--cons-of-c))
- (-> t contract-ast)
- "Get the AST of CONTRACT."
- (contract--oref-or-oset
-  contract
-  ast
-  (contract--make-ast
-   :constructor 'contract-cons-of-c
-   :arguments (contract--subcontracts contract))))
+(contract--bootstrap-defmethod contract--ast ((contract contract--cons-of-c))
+  (-> t contract-ast)
+  "Get the AST of CONTRACT."
+  (contract--oref-or-oset
+   contract
+   ast
+   (contract--make-ast
+    :constructor 'contract-cons-of-c
+    :arguments (contract--subcontracts contract))))
 
-(contract--bootstrap-defmethod
- contract-projection
- ((contract contract--cons-of-c))
- (-> t (contract--arity-t 1))
- "Compute the projection function for CONTRACT."
- (contract--oref-or-oset
-  contract
-  proj
-  (lambda (pos-blame)
-    (contract--precond-expect-blame "projection of contract-cons-of-c" pos-blame)
-    (lambda (value neg-party)
-      (contract--add-negative-party pos-blame neg-party)
-      (if (not (consp value))
-          (contract-raise-violation
-           (contract--make-violation
-            :blame pos-blame
-            :contract contract
-            :callstack (contract--function-stack)
-            :format "Expected a cons cell, got %s")
-           value)
-          (cons
-           (contract-apply
-            (car (contract--subcontracts contract))
-            (car value)
-            (contract--blame-add-context pos-blame "in the car of"))
-           (contract-apply
-            (cadr (contract--subcontracts contract))
-            (cdr value)
-            (contract--blame-add-context pos-blame "in the cdr of"))))))))
+(contract--bootstrap-defmethod contract-projection ((contract contract--cons-of-c))
+  (-> t (contract--arity-t 1))
+  "Compute the projection function for CONTRACT."
+  (contract--oref-or-oset
+   contract
+   proj
+   (lambda (pos-blame)
+     (contract--precond-expect-blame "projection of contract-cons-of-c" pos-blame)
+     (lambda (value neg-party)
+       (contract--add-negative-party pos-blame neg-party)
+       (if (not (consp value))
+           (contract-raise-violation
+            (contract--make-violation
+             :blame pos-blame
+             :contract contract
+             :callstack (contract--function-stack)
+             :format "Expected a cons cell, got %s")
+            value)
+         (cons
+          (contract-apply
+           (car (contract--subcontracts contract))
+           (car value)
+           (contract--blame-add-context pos-blame "in the car of"))
+          (contract-apply
+           (cadr (contract--subcontracts contract))
+           (cdr value)
+           (contract--blame-add-context pos-blame "in the cdr of"))))))))
 
-(contract--bootstrap-defun
- contract-cons-of-c
- (car-contract cdr-contract)
- (-> contract-contract contract-contract contract-contract)
- "Contract for cons cells."
- (contract--cons-of-c :subcontracts (list car-contract cdr-contract)))
+(contract--bootstrap-defun contract-cons-of-c (car-contract cdr-contract)
+  (-> contract-contract contract-contract contract-contract)
+  "Contract for cons cells."
+  (contract--cons-of-c :subcontracts (list car-contract cdr-contract)))
+
+;;;;; CL
+
+(contract--bootstrap-defun contract-the-c (some-cl-type)
+  ;; TODO: Why doesn't this work?
+  ;; (-> t contract-contract)
+  (-> t t)
+  "Check a (quoted) CL type annotation.
+
+See Info node `(cl)Type Predicates'."
+  (contract-predicate
+   (lambda (value) (cl-typep value some-cl-type))
+   (concat
+    (format "Expected a value of (cl-)type %s" some-cl-type)
+    ", but got %s")
+   'contract-the-c
+   (list some-cl-type)
+   t))
 
 ;; TODO: contract-xor-c
 ;; TODO: contract-one-of-c
@@ -2165,84 +2039,69 @@ The last contract is the contract for the function's return value.
 
 ;;;; Attaching Contracts
 
-(contract--bootstrap-defun
- contract--should-enable
- (contract)
- (-> contract-contract boolean)
- "Check if CONTRACT should be enabled.
+(contract--bootstrap-defun contract--should-enable (contract)
+  (-> contract-contract boolean)
+  "Check if CONTRACT should be enabled.
 
 Looks at `contract-enable' and `contract-enable-slow'."
- (and
-  contract-enable
-  (or
-   contract-enable-slow
-   (contract-is-constant-time contract))))
+  (and contract-enable
+       (or contract-enable-slow
+           (contract-is-constant-time contract))))
 
-(contract--bootstrap-defsubst
- contract--blame-for-function
- (func)
- (-> symbol contract-valid-blame)
- ;; TODO: Does this work with e.g. lambdas passed directly? Presumably not?
- (let ((name (symbol-name func)))
-   (contract-make-blame
-    :positive-party name
-    :negative-party (concat "caller of " name))))
+(contract--bootstrap-defsubst contract--blame-for-function (func)
+  (-> symbol contract-valid-blame)
+  ;; TODO: Does this work with e.g. lambdas passed directly? Presumably not?
+  (let ((name (symbol-name func)))
+    (contract-make-blame
+     :positive-party name
+     :negative-party (concat "caller of " name))))
 
-(contract--bootstrap-defun
- contract-advise
- (contract func)
- (-> contract-contract function t)
- "Advise FUNC by applying CONTRACT to it.
+(contract--bootstrap-defun contract-advise (contract func)
+  (-> contract-contract function t)
+  "Advise FUNC by applying CONTRACT to it.
 
 Cautiously will not advice any function with pre-existing advice."
- (unless (or (advice--p (advice--symbol-function func))
-             (not (contract--should-enable contract)))
-   (let* ((blame (contract--blame-for-function func))
-          (contracted (contract-apply contract func blame)))
-     (advice-add func :override contracted))))
+  (unless (or (advice--p (advice--symbol-function func))
+              (not (contract--should-enable contract)))
+    (let* ((blame (contract--blame-for-function func))
+           (contracted (contract-apply contract func blame)))
+      (advice-add func :override contracted))))
 
 ;; Dogfooding:
-(defconst
-  contract--contract-advise-contract
+(defconst contract--contract-advise-contract
   (contract->
    contract-contract-c
    (contract-and-c contract-function-c (contract-not-c contract-subr-c))
    contract-nil-c))
 (defvar contract--contract-advise-advised nil)
 (unless contract--contract-advise-advised
-  (contract-advise
-   contract--contract-advise-contract
-   #'contract-advise)
+  (contract-advise contract--contract-advise-contract #'contract-advise)
   (setq contract--contract-advise-advised t))
 
 ;; TODO: Rewrite recursive calls to avoid contract checking overhead?
 ;; TODO: add fast-contract kwarg
 ;; TODO: modifies/preserves kwargs
-(contract--bootstrap-defmacro
- contract-defun
- (name arguments &rest forms)
- (-> symbol list &rest list t)
- "Define NAME as a function taking ARGUMENTS and body FORMS.
+(contract--bootstrap-defmacro contract-defun (name arguments &rest forms)
+  (-> symbol list &rest list t)
+  "Define NAME as a function taking ARGUMENTS and body FORMS.
 
 If the first forms in FORMS is `:contract', the second form is interpreted as a
 contract and applied to the defined function."
- (let ((contract (if (equal (car forms) :contract)
-                     (progn
-                       (pop forms)
-                       (pop forms))
-                   contract-any-c)))
-   `(progn
-      (put (quote ,name) 'contract ,contract)
-      (setf
-       (symbol-function (quote ,name))
-       (contract-apply
-        ,contract
-        (lambda ,arguments ,@forms)
-        (contract-make-blame
-         :positive-party
-         ,(symbol-name name)
-         :negative-party
-         ,(concat "caller of " (symbol-name name))))))))
+  (declare (indent 2) (doc-string 4))
+  (let ((contract (if (eq (car forms) :contract)
+                      (progn (pop forms) (pop forms))
+                    contract-any-c)))
+    `(progn
+       (put (quote ,name) 'contract ,contract)
+       (defalias (quote ,name)
+         (contract-apply
+          ,(get (quote ,name) 'contract)
+          (lambda ,arguments ,@forms)
+          (contract-make-blame
+           :positive-party
+           ,(symbol-name name)
+           :negative-party
+           ,(concat "caller of " (symbol-name name))))))))
 
 ;; TODO: contract-defconst
 ;; TODO: contract-setf

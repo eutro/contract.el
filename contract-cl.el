@@ -35,23 +35,7 @@
   (require 'contract))
 (require 'cl-lib)
 
-(contract--bootstrap-defun
- contract-the-c
- (some-cl-type)
- ;; TODO: Why doesn't this work?
- ;; (-> t contract-contract)
- (-> t t)
- "Check a (quoted) CL type annotation.
-
-See Info node `(cl)Type Predicates'."
- (contract-predicate
-  (lambda (value) (cl-typep value some-cl-type))
-  (concat
-   (format "Expected a value of (cl-)type %s" some-cl-type)
-   ", but got %s")
-  'contract-the-c
-  (list some-cl-type)
-  t))
+;; This file is empty.
 
 (provide 'contract-cl)
 

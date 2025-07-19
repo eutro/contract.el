@@ -33,8 +33,7 @@
 (require 'contract)
 (require 'seq)
 
-(defvar
-  contract-seq-contracts
+(defvar contract-seq-contracts
   (list
    (cons
     #'seq-elt
